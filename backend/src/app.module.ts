@@ -8,7 +8,7 @@ import { ScanModule } from './scan/scan.module';
     ConfigModule.forRoot({ isGlobal: true }),
     BullModule.forRoot({
       redis: {
-        host: process.env.REDIS_HOST || 'localhost',
+        host: process.env.REDIS_HOST || '127.0.0.1',
         port: parseInt(process.env.REDIS_PORT) || 6379,
       },
     }),

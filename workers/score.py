@@ -1,24 +1,26 @@
-import sys
 import json
+import sys
 
-def calculate_score(findings_json):
-    findings = json.loads(findings_json)
-    base_score = 100
-    
+SEVERITY_WEIGHTS = {
+    'critical': 25,
+    'high': 15,
+    'medium': 5,
+    'low': 2,
+}
+
+
+def calculate_score(findings):
+    score = 100
     for finding in findings:
         severity = finding.get('severity', 'low').lower()
-        if severity == 'critical':
-            base_score -= 25
-        elif severity == 'high':
-            base_score -= 15
-        elif severity == 'medium':
-            base_score -= 5
-        elif severity == 'low':
-            base_score -= 2
-            
-    return max(0, base_score)
+        score -= SEVERITY_WEIGHTS.get(severity, 0)
+    return max(0, score)
 
-if __name__ == "__main__":
-    if len(sys.argv) < 2:
-        sys.exit(1)
-    print(calculate_score(sys.argv[1]))
+
+if __name__ == '__main__':
+    try:
+        data = sys.stdin.read().strip()
+        findings = json.loads(data)
+        print(calculate_score(findings))
+    except Exception:
+        print(100)

@@ -1,205 +1,473 @@
-import React, { useState, useEffect } from 'react';
-import { 
-  Search, Shield, ShieldAlert, ShieldCheck, Github, 
-  ChevronDown, ChevronUp, FileCode, Clock, AlertTriangle, 
-  CheckCircle, Loader2, Lock, FileWarning
+import React, { useState, useEffect, useRef } from 'react';
+import {
+  Lock, FileCode, AlertTriangle, CheckCircle,
+  Loader2, Clock, ArrowRight,
+  Key, Package, Settings2, Github, Zap,
 } from 'lucide-react';
 
-// --- MOCK DATA ---
-const generateMockReport = (username) => ({
-  username,
-  overallScore: 72,
-  scannedRepos: 12,
-  repos: [
-    {
-      id: 1,
-      name: 'ecommerce-api-node',
-      language: 'TypeScript',
-      score: 45,
-      findings: [
-        { id: 'f1', type: 'secret', severity: 'critical', message: 'AWS_ACCESS_KEY_ID encontrada hardcoded', file: 'src/config/aws.ts', line: 14, commit: 'a3f2c1d', timeAgo: 'há 8 meses' },
-        { id: 'f2', type: 'cve', severity: 'high', message: 'Vulnerabilidade no pacote "jsonwebtoken" (CVE-2022-23529)', file: 'package.json', line: 42, commit: null, timeAgo: null }
-      ]
-    },
-    {
-      id: 2,
-      name: 'react-dashboard-admin',
-      language: 'JavaScript',
-      score: 85,
-      findings: [
-        { id: 'f3', type: 'cve', severity: 'medium', message: 'ReDoS em expressão regular do "validator" (CVE-2021-3765)', file: 'package-lock.json', line: 1205, commit: null, timeAgo: null }
-      ]
-    },
-    {
-      id: 3,
-      name: 'landing-page-institucional',
-      language: 'HTML/CSS',
-      score: 100,
-      findings: []
-    }
-  ]
-});
+const SEV = {
+  critical: { badge: 'bg-red-500/10 text-red-400 border-red-500/25',    dot: 'bg-red-500',    label: 'CRITICAL' },
+  high:     { badge: 'bg-orange-500/10 text-orange-400 border-orange-500/25', dot: 'bg-orange-500', label: 'HIGH' },
+  medium:   { badge: 'bg-yellow-500/10 text-yellow-400 border-yellow-500/25', dot: 'bg-yellow-500', label: 'MEDIUM' },
+  low:      { badge: 'bg-slate-800 text-slate-400 border-slate-700',     dot: 'bg-slate-500',  label: 'LOW' },
+};
 
-// --- COMPONENTES ---
-const ScoreRing = ({ score, size = 120, strokeWidth = 8 }) => {
-  const radius = (size - strokeWidth) / 2;
-  const circumference = radius * 2 * Math.PI;
-  const offset = circumference - (score / 100) * circumference;
-  let colorClass = 'text-red-500';
-  if (score >= 80) colorClass = 'text-emerald-500';
-  else if (score >= 50) colorClass = 'text-amber-500';
+const Logo = () => (
+  <div className="w-8 h-8 bg-violet-600 rounded-lg flex items-center justify-center shadow-lg shadow-violet-900/40">
+    <Lock className="w-4 h-4 text-white" />
+  </div>
+);
 
+const SeverityBadge = ({ severity }) => {
+  const c = SEV[severity] ?? SEV.low;
   return (
-    <div className="relative flex items-center justify-center" style={{ width: size, height: size }}>
-      <svg className="transform -rotate-90 absolute" width={size} height={size}>
-        <circle cx={size / 2} cy={size / 2} r={radius} className="text-slate-700" strokeWidth={strokeWidth} stroke="currentColor" fill="transparent" />
-        <circle cx={size / 2} cy={size / 2} r={radius} className={`${colorClass} transition-all duration-1000 ease-out`} strokeWidth={strokeWidth} strokeDasharray={circumference} strokeDashoffset={offset} strokeLinecap="round" stroke="currentColor" fill="transparent" />
-      </svg>
-      <div className="absolute flex flex-col items-center justify-center">
-        <span className="text-3xl font-bold text-slate-100">{score}</span>
-        <span className="text-xs text-slate-400">/ 100</span>
+    <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[11px] font-bold border shrink-0 ${c.badge}`}>
+      <span className={`w-1.5 h-1.5 rounded-full ${c.dot}`} />
+      {c.label}
+    </span>
+  );
+};
+
+const TypeIcon = ({ type }) => {
+  if (type === 'secret') return <Key className="w-3.5 h-3.5 text-red-400 shrink-0 mt-0.5" />;
+  if (type === 'cve')    return <Package className="w-3.5 h-3.5 text-orange-400 shrink-0 mt-0.5" />;
+  return <Settings2 className="w-3.5 h-3.5 text-yellow-400 shrink-0 mt-0.5" />;
+};
+
+const StatusIcon = ({ status }) => {
+  if (status === 'scanning') return <Loader2 className="w-3.5 h-3.5 text-violet-400 animate-spin shrink-0" />;
+  if (status === 'done')     return <CheckCircle className="w-3.5 h-3.5 text-emerald-400 shrink-0" />;
+  if (status === 'error')    return <AlertTriangle className="w-3.5 h-3.5 text-red-400 shrink-0" />;
+  return <Clock className="w-3.5 h-3.5 text-slate-700 shrink-0" />;
+};
+
+const ScoreRing = ({ score, size = 96, stroke = 8 }) => {
+  const r = (size - stroke) / 2;
+  const c = r * 2 * Math.PI;
+  const offset = c - (score / 100) * c;
+  const color = score >= 80 ? '#10B981' : score >= 50 ? '#F59E0B' : '#EF4444';
+  const label = score >= 80 ? 'Secure' : score >= 50 ? 'At Risk' : 'Critical';
+  return (
+    <div className="flex flex-col items-center gap-1">
+      <div className="relative" style={{ width: size, height: size }}>
+        <svg className="-rotate-90 absolute inset-0" width={size} height={size}>
+          <circle cx={size/2} cy={size/2} r={r} strokeWidth={stroke} stroke="#1E293B" fill="none" />
+          <circle cx={size/2} cy={size/2} r={r} strokeWidth={stroke}
+            stroke={color} fill="none" strokeLinecap="round"
+            strokeDasharray={c} strokeDashoffset={offset}
+            style={{ transition: 'stroke-dashoffset 1.2s cubic-bezier(.4,0,.2,1)' }}
+          />
+        </svg>
+        <div className="absolute inset-0 flex flex-col items-center justify-center">
+          <span className="text-2xl font-extrabold text-white leading-none">{score}</span>
+          <span className="text-[10px] text-slate-600 font-medium">/100</span>
+        </div>
       </div>
+      <span className="text-xs font-semibold" style={{ color }}>{label}</span>
     </div>
   );
 };
 
+const ScorePill = ({ score }) => {
+  const color = score >= 80
+    ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/25'
+    : score >= 50
+      ? 'bg-yellow-500/10 text-yellow-400 border-yellow-500/25'
+      : 'bg-red-500/10 text-red-400 border-red-500/25';
+  return (
+    <span className={`px-2.5 py-1 rounded-lg text-sm font-bold border ${color} shrink-0`}>
+      {score}
+    </span>
+  );
+};
+
 export default function App() {
-  const [view, setView] = useState('home');
+  const [view, setView]             = useState('home');
+  const [input, setInput]           = useState('');
   const [scanUsername, setScanUsername] = useState('');
   const [reportData, setReportData] = useState(null);
-  const [jobId, setJobId] = useState(null);
-  const [error, setError] = useState(null);
+  const [jobId, setJobId]           = useState(null);
+  const [progress, setProgress]     = useState(null);
+  const [error, setError]           = useState(null);
+  const logsEndRef = useRef(null);
+  const inputRef   = useRef(null);
 
-  const API_BASE = 'http://localhost:3000/api'; // Ajuste conforme necessário
+  const extractUsername = (raw) => {
+    const t = raw.trim().replace(/\/$/, '');
+    const m = t.match(/^(?:https?:\/\/)?github\.com\/([A-Za-z0-9_.-]+)/i);
+    return m ? m[1] : t;
+  };
 
-  const handleStartScan = async (username) => {
+  const startScan = async (rawInput) => {
+    const username = extractUsername(rawInput);
+    if (!username) return;
     setError(null);
+    setProgress(null);
     setScanUsername(username);
     setView('scanning');
-
     try {
-        const response = await fetch(`${API_BASE}/scan/${username}`, { method: 'POST' });
-        const data = await response.json();
-        if (data.jobId) {
-            setJobId(data.jobId);
-        } else {
-            throw new Error(data.message || 'Falha ao iniciar scan');
-        }
+      const res  = await fetch(`/api/scan/${username}`, { method: 'POST' });
+      const data = await res.json();
+      if (data.jobId) {
+        setJobId(data.jobId);
+      } else {
+        throw new Error(data.message || 'Failed to start scan');
+      }
     } catch (err) {
-        setError(err.message);
-        setView('home');
+      setError(err.message);
+      setView('home');
     }
   };
 
+  const reset = () => {
+    setView('home');
+    setReportData(null);
+    setJobId(null);
+    setProgress(null);
+    setInput('');
+    setTimeout(() => inputRef.current?.focus(), 80);
+  };
+
   useEffect(() => {
-    let interval;
-    if (view === 'scanning' && jobId) {
-        interval = setInterval(async () => {
-            try {
-                const response = await fetch(`${API_BASE}/scan/result/${jobId}`);
-                const data = await response.json();
-                
-                if (data.status === 'completed') {
-                    setReportData(data.report);
-                    setView('report');
-                    clearInterval(interval);
-                }
-            } catch (err) {
-                console.error("Erro no polling:", err);
-            }
-        }, 3000);
-    }
-    return () => clearInterval(interval);
+    logsEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [progress?.logs]);
+
+  useEffect(() => {
+    if (view !== 'scanning' || !jobId) return;
+    const iv = setInterval(async () => {
+      try {
+        const res  = await fetch(`/api/scan/result/${jobId}`);
+        const data = await res.json();
+        if (data.status === 'completed') {
+          setReportData(data.report);
+          setView('report');
+          clearInterval(iv);
+        } else if (data.progress) {
+          setProgress(data.progress);
+        }
+      } catch { /* retry */ }
+    }, 800);
+    return () => clearInterval(iv);
   }, [view, jobId]);
 
-  return (
-    <div className="min-h-screen bg-slate-950 text-slate-200 flex flex-col items-center justify-center p-8">
-      {error && <div className="mb-4 p-4 bg-red-900/50 border border-red-500 rounded text-red-200">{error}</div>}
-      
-      {view === 'home' && (
-        <div className="text-center">
-           <Shield className="w-16 h-16 text-indigo-500 mx-auto mb-4" />
-           <h1 className="text-4xl font-bold mb-8">Reposcope</h1>
-           <div className="flex gap-2">
-             <input 
-               type="text" 
-               placeholder="GitHub Username" 
-               className="px-4 py-2 bg-slate-900 border border-slate-700 rounded-lg outline-none focus:border-indigo-500"
-               value={scanUsername}
-               onChange={(e) => setScanUsername(e.target.value)}
-             />
-             <button 
-               onClick={() => handleStartScan(scanUsername || 'octocat')} 
-               className="px-6 py-2 bg-indigo-600 hover:bg-indigo-700 rounded-lg font-bold transition-colors"
-             >
-               Escanear
-             </button>
-           </div>
+  const pct = progress
+    ? Math.round((progress.scannedRepos / Math.max(progress.totalRepos, 1)) * 100)
+    : 0;
+
+  const countBySeverity = (repos) => {
+    const c = { critical: 0, high: 0, medium: 0, low: 0 };
+    repos?.forEach(r => r.findings?.forEach(f => { if (f.severity in c) c[f.severity]++; }));
+    return c;
+  };
+
+  const Header = ({ showReset }) => (
+    <header className="border-b border-slate-800/70 px-5 sm:px-8 py-4 flex items-center justify-between shrink-0">
+      <button onClick={reset} className="flex items-center gap-2.5 group">
+        <Logo />
+        <span className="font-bold text-white tracking-tight text-[15px] group-hover:text-violet-300 transition-colors">
+          VaultScan
+        </span>
+      </button>
+      <div className="flex items-center gap-4">
+        {showReset && (
+          <button
+            onClick={reset}
+            className="text-sm text-slate-400 hover:text-white px-3 py-1.5 rounded-lg hover:bg-slate-800 transition-all"
+          >
+            ← New scan
+          </button>
+        )}
+        <a
+          href="https://github.com"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-slate-500 hover:text-slate-300 transition-colors"
+          title="View source"
+        >
+          <Github className="w-5 h-5" />
+        </a>
+      </div>
+    </header>
+  );
+
+  if (view === 'home') return (
+    <div className="min-h-screen bg-[#060912] text-slate-200 flex flex-col">
+      <Header />
+
+      {error && (
+        <div className="mx-auto mt-4 px-4 py-3 bg-red-950/60 border border-red-500/30 rounded-xl text-red-300 text-sm max-w-md w-full">
+          {error}
         </div>
       )}
 
-      {view === 'scanning' && (
-        <div className="flex flex-col items-center">
-            <Loader2 className="w-10 h-10 animate-spin text-indigo-500 mb-4" /> 
-            <div className="text-xl">A analisar repositórios de <strong>@{scanUsername}</strong>...</div>
-            <div className="text-sm text-slate-400 mt-2">Isto pode demorar alguns minutos.</div>
+      <main className="flex-1 flex flex-col items-center justify-center px-6 pb-20 animate-fade-up">
+        <div className="inline-flex items-center gap-2 px-3.5 py-1.5 bg-violet-500/10 border border-violet-500/20 rounded-full text-violet-300 text-xs font-semibold mb-8 tracking-wide">
+          <Zap className="w-3 h-3" />
+          Open-source · Free · No signup
         </div>
-      )}
 
-      {view === 'report' && reportData && (
-         <div className="w-full max-w-4xl bg-slate-900 p-8 rounded-xl border border-slate-800 shadow-2xl overflow-y-auto max-h-[85vh]">
-            <div className="flex justify-between items-start mb-8 border-b border-slate-700 pb-6">
-                <div>
-                    <h2 className="text-3xl font-bold">Relatório: @{reportData.username}</h2>
-                    <p className="text-slate-400 mt-1">{reportData.scannedRepos} repositórios analisados</p>
-                </div>
-                <ScoreRing score={reportData.overallScore} size={110} strokeWidth={8} />
+        <h1 className="text-5xl sm:text-[64px] font-black tracking-tight text-center mb-5 leading-[1.06] max-w-3xl">
+          <span className="text-white">Security audit for</span>
+          <br />
+          <span className="bg-gradient-to-r from-violet-400 via-fuchsia-400 to-pink-300 bg-clip-text text-transparent">
+            every repository.
+          </span>
+        </h1>
+
+        <p className="text-slate-400 text-lg text-center max-w-xl mb-10 leading-relaxed">
+          Paste any GitHub profile URL to scan all public repositories for
+          leaked secrets, known CVEs, and security misconfigurations — in seconds.
+        </p>
+
+        <div className="w-full max-w-md">
+          <div className="flex gap-2">
+            <div className="flex-1 flex items-center gap-2.5 bg-slate-900 border border-slate-700/80 rounded-xl px-4 focus-within:border-violet-500 focus-within:ring-2 focus-within:ring-violet-500/15 transition-all">
+              <Github className="w-4 h-4 text-slate-600 shrink-0" />
+              <input
+                ref={inputRef}
+                type="text"
+                placeholder="github.com/username"
+                className="flex-1 bg-transparent py-3.5 text-sm outline-none placeholder-slate-600 text-slate-100"
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && startScan(input)}
+                autoFocus
+              />
             </div>
-
-            <div className="grid gap-4">
-                {reportData.repos.map(repo => (
-                    <div key={repo.id} className="p-4 bg-slate-950/50 rounded-lg border border-slate-800 hover:border-slate-700 transition-colors">
-                        <div className="flex justify-between items-center mb-3">
-                            <div className="flex items-center gap-2">
-                                <FileCode className="w-5 h-5 text-indigo-400" />
-                                <span className="font-bold text-lg">{repo.name}</span>
-                                <span className="text-xs bg-slate-800 px-2 py-0.5 rounded text-slate-400">{repo.language || 'N/A'}</span>
-                            </div>
-                            <span className={`px-3 py-1 rounded-full text-sm font-bold ${repo.score >= 80 ? 'bg-emerald-500/10 text-emerald-500' : 'bg-amber-500/10 text-amber-500'}`}>
-                                Score: {repo.score}
-                            </span>
-                        </div>
-                        
-                        {repo.findings.length > 0 ? (
-                            <div className="grid gap-2 mt-2">
-                                {repo.findings.map((f, idx) => (
-                                    <div key={idx} className="flex items-start gap-3 p-2 bg-red-500/5 border border-red-500/10 rounded">
-                                        <AlertTriangle className="w-4 h-4 text-red-500 mt-0.5 flex-shrink-0" />
-                                        <div className="text-sm">
-                                            <span className="font-bold text-red-400 mr-2">[{f.severity.toUpperCase()}]</span>
-                                            <span className="text-slate-200">{f.message}</span>
-                                            <div className="text-xs text-slate-500 mt-1">Local: {f.file}</div>
-                                        </div>
-                                    </div>
-                                ))}
-                            </div>
-                        ) : (
-                            <div className="flex items-center gap-2 text-sm text-emerald-500/80">
-                                <CheckCircle className="w-4 h-4" /> Nenhum problema encontrado
-                            </div>
-                        )}
-                    </div>
-                ))}
-            </div>
-
-            <button 
-                onClick={() => setView('home')} 
-                className="mt-8 px-6 py-2 border border-slate-700 hover:bg-slate-800 rounded-lg transition-colors inline-flex items-center gap-2"
+            <button
+              onClick={() => startScan(input)}
+              disabled={!input.trim()}
+              className="px-5 py-3.5 bg-violet-600 hover:bg-violet-500 active:bg-violet-700 disabled:opacity-25 disabled:cursor-not-allowed rounded-xl font-semibold text-sm flex items-center gap-2 shrink-0 shadow-lg shadow-violet-900/30"
             >
-                ← Nova Busca
+              Scan
+              <ArrowRight className="w-4 h-4" />
             </button>
-         </div>
-      )}
+          </div>
+
+          <p className="text-xs text-slate-700 text-center mt-3">
+            Try: <button onClick={() => setInput('https://github.com/torvalds')} className="text-slate-500 hover:text-violet-400 transition-colors underline underline-offset-2">torvalds</button>
+            {' · '}
+            <button onClick={() => setInput('https://github.com/sindresorhus')} className="text-slate-500 hover:text-violet-400 transition-colors underline underline-offset-2">sindresorhus</button>
+          </p>
+        </div>
+
+        <div className="flex flex-wrap justify-center gap-8 mt-14 text-sm">
+          {[
+            { icon: <Key className="w-4 h-4 text-red-400" />,      label: '40+ secret patterns',        sub: 'AWS, GitHub, Stripe…' },
+            { icon: <Package className="w-4 h-4 text-orange-400" />, label: 'OSV vulnerability database', sub: 'npm, PyPI, Go, Rust…' },
+            { icon: <Settings2 className="w-4 h-4 text-yellow-400" />, label: 'Misconfiguration scanner', sub: 'Docker, CI, configs…' },
+          ].map(({ icon, label, sub }) => (
+            <div key={label} className="flex flex-col items-center gap-1.5 text-center">
+              <div className="w-10 h-10 rounded-xl bg-slate-900 border border-slate-800 flex items-center justify-center mb-1">
+                {icon}
+              </div>
+              <span className="text-slate-300 font-medium">{label}</span>
+              <span className="text-slate-600 text-xs">{sub}</span>
+            </div>
+          ))}
+        </div>
+      </main>
     </div>
   );
+
+  if (view === 'scanning') return (
+    <div className="min-h-screen bg-[#060912] text-slate-200 flex flex-col">
+      <Header />
+
+      <main className="flex-1 flex flex-col items-center px-5 sm:px-8 py-10">
+        <div className="w-full max-w-3xl animate-fade-up">
+
+          <div className="flex items-end justify-between mb-2">
+            <div>
+              <h2 className="text-xl font-bold text-white">
+                Scanning <span className="text-violet-400">@{scanUsername}</span>
+              </h2>
+              <p className="text-slate-500 text-sm mt-0.5">
+                {progress
+                  ? `${progress.scannedRepos} of ${progress.totalRepos} repositories complete`
+                  : 'Fetching repository list…'}
+              </p>
+            </div>
+            {progress && (
+              <span className="text-4xl font-black text-violet-400 tabular-nums leading-none pb-0.5">
+                {pct}%
+              </span>
+            )}
+          </div>
+
+          <div className="h-1 bg-slate-800 rounded-full overflow-hidden mb-8">
+            <div
+              className="h-full bg-gradient-to-r from-violet-600 to-fuchsia-500 rounded-full transition-all duration-500 ease-out"
+              style={{ width: `${pct || 2}%` }}
+            />
+          </div>
+
+          {progress?.repos ? (
+            <div className="space-y-1.5 mb-6 max-h-80 overflow-y-auto pr-1">
+              {progress.repos.map((repo, i) => (
+                <div
+                  key={repo.id}
+                  className={`flex items-center gap-3 px-4 py-2.5 rounded-xl border text-sm transition-all ${
+                    repo.status === 'scanning' ? 'bg-violet-500/5 border-violet-500/20' :
+                    repo.status === 'done'     ? 'bg-emerald-500/5 border-emerald-500/15' :
+                    repo.status === 'error'    ? 'bg-red-500/5 border-red-500/15' :
+                                                 'bg-slate-900/30 border-slate-800/50'
+                  }`}
+                >
+                  <span className="text-slate-700 text-xs w-5 text-right shrink-0 tabular-nums font-mono">{i + 1}</span>
+                  <StatusIcon status={repo.status} />
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="font-medium truncate">{repo.name}</span>
+                      {repo.language && (
+                        <span className="text-[10px] text-slate-600 bg-slate-800/80 px-1.5 py-0.5 rounded shrink-0">
+                          {repo.language}
+                        </span>
+                      )}
+                    </div>
+                    {repo.status === 'scanning' && repo.currentFile && (
+                      <p className="text-xs text-violet-400/50 font-mono truncate mt-0.5">{repo.currentFile}</p>
+                    )}
+                    {repo.status === 'done' && (
+                      <p className="text-xs mt-0.5">
+                        {repo.findingsCount > 0
+                          ? <span className="text-yellow-500/90">{repo.findingsCount} issue{repo.findingsCount !== 1 ? 's' : ''}</span>
+                          : <span className="text-emerald-500/80">clean</span>}
+                      </p>
+                    )}
+                  </div>
+                  {repo.status === 'pending' && (
+                    <span className="text-[11px] text-slate-700 shrink-0">queued</span>
+                  )}
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="flex items-center gap-2.5 text-slate-500 mb-6 py-2">
+              <Loader2 className="w-4 h-4 animate-spin text-violet-500" />
+              <span className="text-sm">Connecting to scan engine…</span>
+            </div>
+          )}
+
+          {progress?.logs?.length > 0 && (
+            <div className="bg-slate-950 border border-slate-800 rounded-xl overflow-hidden">
+              <div className="flex items-center gap-1.5 px-4 py-2.5 border-b border-slate-800/80">
+                <span className="w-2.5 h-2.5 rounded-full bg-red-500/50" />
+                <span className="w-2.5 h-2.5 rounded-full bg-yellow-500/50" />
+                <span className="w-2.5 h-2.5 rounded-full bg-green-500/50" />
+                <span className="ml-2 text-[11px] text-slate-600 font-medium uppercase tracking-wider">Live output</span>
+              </div>
+              <div className="p-4 max-h-36 overflow-y-auto space-y-0.5">
+                {progress.logs.slice(-40).map((log, i) => (
+                  <div key={i} className="text-xs text-slate-500 font-mono leading-5">
+                    <span className="text-violet-700 select-none">›</span> {log}
+                  </div>
+                ))}
+                <div ref={logsEndRef} />
+              </div>
+            </div>
+          )}
+        </div>
+      </main>
+    </div>
+  );
+
+  if (view === 'report' && reportData) {
+    const counts      = countBySeverity(reportData.repos);
+    const totalIssues = Object.values(counts).reduce((s, n) => s + n, 0);
+    const sortedRepos = [...reportData.repos].sort((a, b) => a.score - b.score);
+
+    return (
+      <div className="min-h-screen bg-[#060912] text-slate-200 flex flex-col">
+        <Header showReset />
+
+        <main className="flex-1 flex flex-col items-center px-4 sm:px-6 py-8 overflow-y-auto">
+          <div className="w-full max-w-4xl animate-fade-up space-y-4">
+
+            <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-6 flex flex-col sm:flex-row items-start sm:items-center gap-6">
+              <ScoreRing score={reportData.overallScore} size={96} stroke={8} />
+
+              <div className="flex-1 min-w-0">
+                <div className="flex items-baseline gap-3 flex-wrap">
+                  <h2 className="text-2xl font-extrabold text-white">@{reportData.username}</h2>
+                  <span className="text-slate-500 text-sm">{reportData.scannedRepos} repos scanned</span>
+                </div>
+
+                <div className="flex flex-wrap gap-2 mt-3">
+                  {totalIssues === 0 ? (
+                    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/25">
+                      <CheckCircle className="w-3 h-3" /> No issues detected
+                    </span>
+                  ) : (
+                    Object.entries(counts)
+                      .filter(([, n]) => n > 0)
+                      .map(([sev, n]) => {
+                        const c = SEV[sev];
+                        return (
+                          <span key={sev} className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold border ${c.badge}`}>
+                            <span className={`w-1.5 h-1.5 rounded-full ${c.dot}`} />
+                            {n} {c.label}
+                          </span>
+                        );
+                      })
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {sortedRepos.map(repo => (
+              <div
+                key={repo.id}
+                className="bg-slate-900/50 border border-slate-800 rounded-xl overflow-hidden hover:border-slate-700/80 transition-colors"
+              >
+                <div className="flex items-center justify-between px-5 py-3.5 gap-3">
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <FileCode className="w-4 h-4 text-slate-600 shrink-0" />
+                    <span className="font-semibold text-slate-100 truncate">{repo.name}</span>
+                    {repo.language && (
+                      <span className="text-[10px] text-slate-600 bg-slate-800/80 px-1.5 py-0.5 rounded shrink-0">
+                        {repo.language}
+                      </span>
+                    )}
+                  </div>
+                  <ScorePill score={repo.score} />
+                </div>
+
+                {repo.findings.length > 0 ? (
+                  <div className="border-t border-slate-800/70 divide-y divide-slate-800/50">
+                    {repo.findings.map((f, idx) => (
+                      <div key={idx} className="flex items-start gap-3 px-5 py-3">
+                        <TypeIcon type={f.type} />
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm text-slate-200 leading-snug">{f.message}</p>
+                          {f.file && f.file !== 'N/A' && (
+                            <p className="text-xs text-slate-600 font-mono mt-1 truncate">{f.file}</p>
+                          )}
+                        </div>
+                        <SeverityBadge severity={f.severity} />
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="border-t border-slate-800/70 px-5 py-3 flex items-center gap-2 text-sm text-emerald-500/70">
+                    <CheckCircle className="w-3.5 h-3.5" />
+                    No vulnerabilities detected
+                  </div>
+                )}
+              </div>
+            ))}
+
+            <p className="text-center text-xs text-slate-700 pb-4">
+              Powered by{' '}
+              <a href="https://osv.dev" target="_blank" rel="noopener noreferrer" className="text-slate-600 hover:text-slate-400 transition-colors">OSV Database</a>
+              {' · '}
+              <a href="https://docs.github.com/en/rest" target="_blank" rel="noopener noreferrer" className="text-slate-600 hover:text-slate-400 transition-colors">GitHub API</a>
+            </p>
+          </div>
+        </main>
+      </div>
+    );
+  }
+
+  return null;
 }
